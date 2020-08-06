@@ -356,7 +356,7 @@ int load_config() {
 		return 1;
 	}
 
-	char *line;
+	char *line = malloc(1);
 	size_t len;
 	while(getline(&line, &len, fp) != -1) {
 		char *name, *val;
