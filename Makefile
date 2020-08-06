@@ -7,6 +7,12 @@ CONFIG_PREFIX ?= /etc
 CFLAGS = -I./include -DCONFIG_PREFIX=\"$(CONFIG_PREFIX)\"
 LDFLAGS = -O2
 
+all: wake-on-arp
+
+debug: LDFLAGS = -g
+debug: CFLAGS += -g
+debug: wake-on-arp
+
 wake-on-arp: $(obj)
 	$(CC) -o $@ $^ $(LDFLAGS) $(CFLAGS)
 
