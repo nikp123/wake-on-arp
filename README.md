@@ -59,10 +59,14 @@ Use-case 2: You are too lazy to wake up your NAS at home using a 3rd party progr
 
 ``./wake-on-arp -h`` to see what arguments you have to fill in
 
+## I don't want to fill in commandline arguments in my init script/daemon!
+
+There's a config file for that, it's (usually) located in ``/etc/wake-on-arp.conf``
+
 # How to install
 
 Once compiled,
-``cp wake-on-arp /usr/local/bin`` or whatever (you should probably know this).
+``make install`` (as root)
 
 # LICENSE
  It's included in this repository. However, since the repository features code from other projects,

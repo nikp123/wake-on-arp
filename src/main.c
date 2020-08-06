@@ -21,6 +21,10 @@
 #include "ns_arp.h"
 #include "ns_arp_packet.h"
 
+#ifndef CONFIG_PREFIX
+	#error "Please specify CONFIG_PREFIX (usually /etc on Linux)"
+#endif
+
 // RETurn ON FAILure
 #define RETONFAIL(x) { int a = x; if(a) return a; }
 
@@ -33,6 +37,8 @@ const char *USAGE_INFO = \
 "This program is a daemon wakes up a device on the local\n"
 "network based upon if the local system tries to access it\n"
 "via LAN network.\n"
+"These parameters can also be set in the config file,\n"
+"which is located at "CONFIG_PREFIX"/wake-on-arp.conf\n"
 "Usage:\n"
 "\t-h/--help - this screen\n"
 "\t-i - IP address of device to wake up\n"
@@ -198,11 +204,6 @@ int parse_ethhdr(unsigned char* buffer, int size) {
 }
 
 int read_args(int argc, char *argv[]) {
-	m.dev_ip_s = NULL;
-	m.dev_mac_s = NULL;
-	m.eth_dev_s = NULL;
-	m.broadcast_ip_s = NULL;
-
 	for(int i=1; i<argc; i++) {
 		if(!strcmp(argv[i], "-h")||!strcmp(argv[i], "--help")) {
 			puts(USAGE_INFO);
@@ -348,7 +349,39 @@ int get_local_ip() {
 	return 0;
 }
 
+int load_config() {
+	FILE *fp = fopen(CONFIG_PREFIX"/wake-on-arp.conf", "r");
+	if(!fp) {
+		fprintf(stderr, "Could not open config file: "CONFIG_PREFIX"/wake-on-arp.conf\n");
+		return 1;
+	}
+
+	char *line;
+	size_t len;
+	while(getline(&line, &len, fp) != -1) {
+		char *name, *val;
+		int error = sscanf(line, "%ms %ms", &name, &val);
+		if(error != 2) continue;
+
+		if(!strcmp("broadcast_ip", name)) {
+			m.broadcast_ip_s = val;
+		} else if(!strcmp("target_ip", name)) {
+			m.dev_ip_s = val;
+		} else if(!strcmp("net_device", name)) {
+			m.eth_dev_s = val;
+		} else if(!strcmp("target_mac", name)) {
+			m.dev_mac_s  = val;
+		}
+		// WARN: if reload is ever implemented, this is a memory leak
+	}
+
+	fclose(fp);
+	return 0;
+}
+
 int main(int argc, char *argv[]) {
+	// priority: load_config < read_args
+	load_config();
 	RETONFAIL(read_args(argc, argv));
 	RETONFAIL(parse_args());
 	RETONFAIL(initialize());
@@ -356,4 +389,5 @@ int main(int argc, char *argv[]) {
 	cleanup();
 	return 0;
 }
+
 
