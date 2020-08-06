@@ -371,7 +371,10 @@ int load_config() {
 			m.eth_dev_s = val;
 		} else if(!strcmp("target_mac", name)) {
 			m.dev_mac_s  = val;
-		}
+		} else free(val); // not used
+
+		// free unused strings
+		free(name);
 		// WARN: if reload is ever implemented, this is a memory leak
 	}
 
