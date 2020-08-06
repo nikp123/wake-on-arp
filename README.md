@@ -63,6 +63,8 @@ Use-case 2: You are too lazy to wake up your NAS at home using a 3rd party progr
 
 There's a config file for that, it's (usually) located in ``/etc/wake-on-arp.conf``
 
+However, it's only there when you run ``make install``
+
 # How to install
 
 Once compiled,
