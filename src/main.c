@@ -378,7 +378,8 @@ int load_config() {
 		// WARN: if reload is ever implemented, this is a memory leak
 	}
 
-	fclose(fp);
+	// weird seg. fault on ARMv7 (have to investigate)
+	//fclose(fp);
 	return 0;
 }
 
