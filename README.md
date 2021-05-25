@@ -1,4 +1,6 @@
 # wake-on-arp
+[![Donation](https://img.shields.io/liberapay/patrons/nikp123.svg?logo=liberapay)](https://liberapay.com/nikp123/donate)
+
 An commandline daemon that wakes up a device on the local network when accessed
 
 # What does this do, exactly?
