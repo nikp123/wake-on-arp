@@ -77,7 +77,3 @@ Once compiled,
  * https://github.com/GramThanos/WakeOnLAN
  * This I guess: https://stackoverflow.com/a/2283541/3832385
 
-## GPL3 is way too aggressive
- We can discuss the license, but I don't want a random-ass company to steal my code and my whole day
- of figuring out how low-level networking works.
-
