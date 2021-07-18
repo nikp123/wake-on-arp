@@ -63,10 +63,13 @@ struct main {
 	char *dev_ip_s;
 	char *dev_mac_s;
 	char *broadcast_ip_s;
+	char *subnet_s;
 
 	unsigned char eth_ip[4];
 	unsigned char dev_ip[4];
 	unsigned char dev_mac[6];
+
+	unsigned int  subnet;
 
 	unsigned char *buffer;
 	unsigned char *magic_packet;
@@ -178,7 +181,12 @@ int parse_arp(unsigned char *data) {
 	if(type == NS_ARP_REQUEST) {
 		// if source matches to host
 		// and if target matches send magic
-		if(!memcmp(m.eth_ip, sa, 4*sizeof(unsigned char))) {
+		unsigned int *eth_ip = (unsigned int*)&m.eth_ip;
+		unsigned int *tar_ip = (unsigned int*)&sa;
+		(*eth_ip) &= m.subnet;
+		(*tar_ip) &= m.subnet;
+
+		if((*eth_ip) == (*tar_ip)) {
 			if(!memcmp(m.dev_ip, ta, 4*sizeof(unsigned char))) {
 				RETONFAIL(send_magic_packet());
 				#ifdef DEBUG
@@ -224,6 +232,10 @@ int read_args(int argc, char *argv[]) {
 			FAILONARGS(i, argc);
 			m.broadcast_ip_s = argv[i+1];
 			i++;
+		} else if(!strcmp(argv[i], "-s")) {
+			FAILONARGS(i, argc);
+			m.subnet_s = argv[i+1];
+			i++;
 		}
 	}
 	return 0;
@@ -246,7 +258,12 @@ int parse_args() {
 		fprintf(stderr, "Broadcast IP not specified!\n");
 		return 1;
 	}
+	if(!m.subnet_s) {
+		printf("No search subnet provided. Assuming default host IP must match ARP request.\n");
+		m.subnet = 0xffffffff;
+	}
 
+	// device MAC
 	int error = sscanf(m.dev_mac_s, "%2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx", &m.dev_mac[0], &m.dev_mac[1],
 									&m.dev_mac[2], &m.dev_mac[3], &m.dev_mac[4], &m.dev_mac[5]);
 	// maybe the user typed it uppercase?
@@ -258,11 +275,26 @@ int parse_args() {
 		fprintf(stderr, "Invalid MAC address: \"%s\"\n", m.dev_mac_s);
 		return 1;
 	}
+
+	// device IP
 	error = sscanf(m.dev_ip_s, "%hhu.%hhu.%hhu.%hhu", &m.dev_ip[0],
 									&m.dev_ip[1], &m.dev_ip[2], &m.dev_ip[3]);
 	if(error != 4) {
-		fprintf(stderr, "Invalid IP address: \"%s\"", m.dev_ip_s);
+		fprintf(stderr, "Invalid IP address: \"%s\"\n", m.dev_ip_s);
 	}
+
+	// subnet mask
+	if(m.subnet_s) {
+		int mask_value;
+		error = sscanf(m.subnet_s, "%d", &mask_value);
+		if(error != 1 || mask_value < 0 || mask_value > 31) {
+			fprintf(stderr, "Error: Subnet mask must be a value between 0 and 31\n");
+		}
+
+		// calculate proper net mask
+		m.subnet = 0xffffffff >> (32-mask_value);  
+	}
+
 	return 0;
 }
 
@@ -370,7 +402,9 @@ int load_config() {
 		} else if(!strcmp("net_device", name)) {
 			m.eth_dev_s = val;
 		} else if(!strcmp("target_mac", name)) {
-			m.dev_mac_s  = val;
+			m.dev_mac_s = val;
+		} else if(!strcmp("subnet", name)) {
+			m.subnet_s = val;
 		} else free(val); // not used
 
 		// free unused strings
