@@ -183,11 +183,11 @@ int parse_arp(unsigned char *data) {
 		// if source matches to host
 		// and if target matches send magic
 		unsigned int *eth_ip = (unsigned int*)&m.eth_ip;
-		unsigned int *tar_ip = (unsigned int*)&sa;
+		unsigned int *src_ip = (unsigned int*)&sa;
 		(*eth_ip) &= m.subnet;
-		(*tar_ip) &= m.subnet;
+		(*src_ip) &= m.subnet;
 
-		if((*eth_ip) == (*tar_ip)) {
+		if((*eth_ip) == (*src_ip)) {
 			if(!memcmp(m.dev_ip, ta, 4*sizeof(unsigned char))) {
 				RETONFAIL(send_magic_packet());
 				#ifdef DEBUG
