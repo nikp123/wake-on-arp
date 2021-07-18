@@ -44,7 +44,8 @@ const char *USAGE_INFO = \
 "\t-i - IP address of device to wake up\n"
 "\t-m - MAC (hardware) address of device to wake up\n"
 "\t-d - network device to check traffic from (eg. eth0)\n"
-"\t-b - broadcast IP address (eg. 192.168.1.255)\n";
+"\t-b - broadcast IP address (eg. 192.168.1.255)\n"
+"\t-s - subnet IP mask (eg. 24)\n";
 
 void cleanup();
 void create_magic_packet();
