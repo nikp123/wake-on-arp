@@ -1,4 +1,6 @@
 # wake-on-arp
+[![Donation](https://img.shields.io/liberapay/patrons/nikp123.svg?logo=liberapay)](https://liberapay.com/nikp123/donate)
+
 An commandline daemon that wakes up a device on the local network when accessed
 
 # What does this do, exactly?
@@ -76,8 +78,4 @@ Once compiled,
  * https://github.com/meetrp/sniffer.c
  * https://github.com/GramThanos/WakeOnLAN
  * This I guess: https://stackoverflow.com/a/2283541/3832385
-
-## GPL3 is way too aggressive
- We can discuss the license, but I don't want a random-ass company to steal my code and my whole day
- of figuring out how low-level networking works.
 
