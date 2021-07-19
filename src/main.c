@@ -21,6 +21,8 @@
 #include "ns_arp.h"
 #include "ns_arp_packet.h"
 
+#include "functions.h"
+
 #ifndef CONFIG_PREFIX
 	#error "Please specify CONFIG_PREFIX (usually /etc on Linux)"
 #endif
@@ -45,7 +47,9 @@ const char *USAGE_INFO = \
 "\t-m - MAC (hardware) address of device to wake up\n"
 "\t-d - network device to check traffic from (eg. eth0)\n"
 "\t-b - broadcast IP address (eg. 192.168.1.255)\n"
-"\t-s - subnet IP mask (eg. 24)\n";
+"\t-s - subnet IP mask (eg. 24)\n"
+"\t-ag - send magic packet even if the ARP came from the router/gateway (disabled by default). "
+"For further info look here: https://github.com/nikp123/wake-on-arp/issues/1#issuecomment-882708765\n";
 
 void cleanup();
 void create_magic_packet();
@@ -65,12 +69,16 @@ struct main {
 	char *dev_mac_s;
 	char *broadcast_ip_s;
 	char *subnet_s;
+	char *allow_gateway_s;
 
 	unsigned char eth_ip[4];
 	unsigned char dev_ip[4];
+	unsigned char gate_ip[4];
 	unsigned char dev_mac[6];
 
 	unsigned int  subnet;
+
+	bool allow_gateway;
 
 	unsigned char *buffer;
 	unsigned char *magic_packet;
@@ -93,6 +101,9 @@ int initialize() {
 	create_magic_packet();
 
 	RETONFAIL(get_local_ip());
+
+	// get gateway ipv4 :)
+	RETONFAIL(get_gateway_ip((unsigned char*)&m.gate_ip, 4, m.eth_dev_s));
 
 	// attach signal handler
 	struct sigaction action;
@@ -182,17 +193,22 @@ int parse_arp(unsigned char *data) {
 	if(type == NS_ARP_REQUEST) {
 		// if source matches to host
 		// and if target matches send magic
-		unsigned int *eth_ip = (unsigned int*)&m.eth_ip;
-		unsigned int *src_ip = (unsigned int*)&sa;
-		(*eth_ip) &= m.subnet;
-		(*src_ip) &= m.subnet;
+		unsigned int eth_ip = *((unsigned int*)&m.eth_ip);
+		unsigned int src_ip = *((unsigned int*)&sa);
+		unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
 
-		if((*eth_ip) == (*src_ip)) {
+		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
+			if(!m.allow_gateway) {
+				if(src_ip == gateway_ip) {
+					puts("Blocked ARP wake-up by gateway");
+					return 0;
+				}
+			}
 			if(!memcmp(m.dev_ip, ta, 4*sizeof(unsigned char))) {
 				RETONFAIL(send_magic_packet());
-				#ifdef DEBUG
-					puts("Sent magic packet!");
-				#endif
+				printf("Magic packet sent by '");
+				print_ip(src_ip);
+				puts("'");
 			}
 		}
 	}
@@ -213,6 +229,8 @@ int parse_ethhdr(unsigned char* buffer, int size) {
 }
 
 int read_args(int argc, char *argv[]) {
+	m.allow_gateway_s = NULL; // because C likes to be undefined and shoot itself
+
 	for(int i=1; i<argc; i++) {
 		if(!strcmp(argv[i], "-h")||!strcmp(argv[i], "--help")) {
 			puts(USAGE_INFO);
@@ -237,6 +255,8 @@ int read_args(int argc, char *argv[]) {
 			FAILONARGS(i, argc);
 			m.subnet_s = argv[i+1];
 			i++;
+		} else if(!strcmp(argv[i], "-ag")) {
+			m.allow_gateway_s = "true";
 		}
 	}
 	return 0;
@@ -294,6 +314,12 @@ int parse_args() {
 
 		// calculate proper net mask
 		m.subnet = 0xffffffff >> (32-mask_value);  
+	}
+
+	// should we allow gateway ARP requests
+	m.allow_gateway = false;
+	if(m.allow_gateway_s) {
+		m.allow_gateway = the_great_bool_destringifier(m.allow_gateway_s);
 	}
 
 	return 0;
@@ -406,6 +432,8 @@ int load_config() {
 			m.dev_mac_s = val;
 		} else if(!strcmp("subnet", name)) {
 			m.subnet_s = val;
+		} else if(!strcmp("allow_gateway", name)) {
+			m.allow_gateway_s = val;
 		} else free(val); // not used
 
 		// free unused strings
