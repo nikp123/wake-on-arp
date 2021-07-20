@@ -198,13 +198,13 @@ int parse_arp(unsigned char *data) {
 		unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
 
 		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
-			if(!m.allow_gateway) {
-				if(src_ip == gateway_ip) {
-					puts("Blocked ARP wake-up by gateway");
-					return 0;
-				}
-			}
 			if(!memcmp(m.dev_ip, ta, 4*sizeof(unsigned char))) {
+				if(!m.allow_gateway) {
+					if(src_ip == gateway_ip) {
+						puts("Blocked ARP wake-up by gateway");
+						return 0;
+					}
+				}
 				RETONFAIL(send_magic_packet());
 				printf("Magic packet sent by '");
 				print_ip(src_ip);
