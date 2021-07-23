@@ -209,6 +209,7 @@ int parse_arp(unsigned char *data) {
 				printf("Magic packet sent by '");
 				print_ip(src_ip);
 				puts("'");
+				fflush(stdout); //Write now to get an accurate timestamp for analyzing wake-up reason
 			}
 		}
 	}
