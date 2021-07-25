@@ -128,6 +128,21 @@ int initialize() {
 		perror("socket error");
 		return 1;
 	}
+	
+	unsigned int eth_ip = *((unsigned int*)&m.eth_ip);
+	unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
+
+	printf("Listen for ARP requests from Source IPs ");
+	print_ip(eth_ip&m.subnet);
+	printf(" - ");
+	print_ip(eth_ip|~m.subnet);
+	if(!m.allow_gateway) {
+		printf(" but ignore ");
+		print_ip(gateway_ip);
+	}
+	puts("");
+	fflush(stdout); //to see this message in systemctl status
+	
 	return 0;
 }
 
@@ -201,8 +216,10 @@ int parse_arp(unsigned char *data) {
 			if(!memcmp(m.dev_ip, ta, 4*sizeof(unsigned char))) {
 				if(!m.allow_gateway) {
 					if(src_ip == gateway_ip) {
-						puts("Blocked ARP wake-up by gateway");
-						return 0;
+						#ifdef DEBUG
+							puts("Blocked ARP wake-up by gateway");
+							fflush(stdout);
+						#endif
 					}
 				}
 				RETONFAIL(send_magic_packet());
