@@ -103,7 +103,7 @@ WantedBy=multi-user.target
 
 If you use a subnet mask fitting the whole network, you may want to monitor which IP did wake up your target.
 
-If the event was in the last days or since last reboot, you don't any additional configuration and can just use
+If the event was in the last few days or since the last reboot, you don't need any additional configuration and can just use
 
 `systemctl status wakeonarp.service` or `journalctl -u wakeonarp.service`
 
