@@ -72,17 +72,6 @@ However, it's only there when you run ``make install``
 Once compiled,
 ``make install`` (as root)
 
-## Configure persistent logging
-If you use a subnet mask fitting the whole network, you may want to monitor which IP did wake up your target.
-
-`sudo vi /etc/rsyslog.d/wake-on-arp.conf`
-
-```
-if $programname == 'wake-on-arp' then /var/log/wake-on-arp.log
-```
-
-`sudo systemctl restart rsyslog`
-
 ## Systemd.service example
 
 If you like, you can use systemd to run and monitor this tool
@@ -109,6 +98,24 @@ WantedBy=multi-user.target
 `sudo systemctl enable wakeonarp.service`
 
 `sudo systemctl start wakeonarp.service`
+
+## Configure persistent logging for analytics
+
+If you use a subnet mask fitting the whole network, you may want to monitor which IP did wake up your target.
+
+If the event was in the last days or since last reboot, you don't any additional configuration and can just use
+
+`systemctl status wakeonarp.service` or `journalctl -u wakeonarp.service`
+
+But if you need to archiv the wakeup reasons, you may want to store it outside of the journal files with the help of rsyslog.
+
+`sudo vi /etc/rsyslog.d/wake-on-arp.conf`
+
+```
+if $programname == 'wake-on-arp' then /var/log/wake-on-arp.log
+```
+
+`sudo systemctl restart rsyslog`
 
 
 # LICENSE
