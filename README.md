@@ -72,6 +72,45 @@ However, it's only there when you run ``make install``
 Once compiled,
 ``make install`` (as root)
 
+## Configure persistent logging
+If you use a subnet mask fitting the whole network, you may want to monitor which IP did wake up your target.
+
+`sudo vi /etc/rsyslog.d/wake-on-arp.conf`
+
+```
+if $programname == 'wake-on-arp' then /var/log/wake-on-arp.log
+```
+
+`sudo systemctl restart rsyslog`
+
+## Systemd.service example
+
+If you like, you can use systemd to run and monitor this tool
+
+`sudo vi /lib/systemd/system/wakeonarp.service`
+
+```INI
+[Unit]
+Description=Wake on LAN based on ARP
+After=network-online.target network.target rsyslog.service
+Wants=network-online.target network.target rsyslog.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wake-on-arp
+Restart=on-failure
+#in case network was not online
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`sudo systemctl enable wakeonarp.service`
+
+`sudo systemctl start wakeonarp.service`
+
+
 # LICENSE
  It's included in this repository. However, since the repository features code from other projects,
  it also includes licenses from these repositories (for those specific parts):
