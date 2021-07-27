@@ -52,7 +52,6 @@ const char *USAGE_INFO = \
 "For further info look here: https://github.com/nikp123/wake-on-arp/issues/1#issuecomment-882708765\n";
 
 void cleanup();
-void create_magic_packet();
 void sig_handler(int);
 int initialize();
 int watch_packets();
@@ -60,36 +59,33 @@ int process_packet(unsigned char* , int);
 int parse_arp(unsigned char *);
 int parse_ethhdr(unsigned char*, int);
 int get_local_ip();
-int send_magic_packet();
+int send_magic_packet(unsigned char*);
 
 struct main {
 	char *eth_dev_s;
 	char *eth_ip_s;
-	char *dev_ip_s;
-	char *dev_mac_s;
 	char *broadcast_ip_s;
 	char *subnet_s;
 	char *allow_gateway_s;
 
+	struct target *target_linked_list;
+
 	unsigned char eth_ip[4];
-	unsigned char dev_ip[4];
 	unsigned char gate_ip[4];
-	unsigned char dev_mac[6];
 
 	unsigned int  subnet;
 
 	bool allow_gateway;
 
 	unsigned char *buffer;
-	unsigned char *magic_packet;
 	int sock_raw;
 	bool alive;
 } m;
 
 void cleanup() {
+	destroy_linked_list(m.target_linked_list);
 	close(m.sock_raw);
 	free(m.buffer);
-	free(m.magic_packet);
 }
 
 // handle signals, such as CTRL-C
@@ -98,8 +94,6 @@ void sig_handler(int signo) {
 }
 
 int initialize() {
-	create_magic_packet();
-
 	RETONFAIL(get_local_ip());
 
 	// get gateway ipv4 :)
@@ -213,7 +207,11 @@ int parse_arp(unsigned char *data) {
 		unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
 
 		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
-			if(!memcmp(m.dev_ip, ta, 4*sizeof(unsigned char))) {
+			struct target *link = m.target_linked_list;
+			for(; link; link=link->next) {
+				if(*(unsigned int*)link->ip != *(unsigned int*)ta)
+					continue;
+
 				if(!m.allow_gateway) {
 					if(src_ip == gateway_ip) {
 						#ifdef DEBUG
@@ -222,11 +220,14 @@ int parse_arp(unsigned char *data) {
 						#endif
 					}
 				}
-				RETONFAIL(send_magic_packet());
-				printf("Magic packet sent by '");
+				RETONFAIL(send_magic_packet(link->magic));
+				printf("Magic packet to '");
+				print_ip(*(unsigned int*)ta);
+				printf("' sent by '");
 				print_ip(src_ip);
 				puts("'");
-				fflush(stdout); //Write now to get an accurate timestamp for analyzing wake-up reason
+				fflush(stdout); // Write now to get an accurate timestamp for analyzing wake-up reason
+				break;
 			}
 		}
 	}
@@ -255,11 +256,11 @@ int read_args(int argc, char *argv[]) {
 			return 0;
 		} else if(!strcmp(argv[i], "-i")) {
 			FAILONARGS(i, argc);
-			m.dev_ip_s = argv[i+1];
+			add_ip_to_linked_list(&m.target_linked_list, 0, argv[i+1]); 
 			i++;
 		} else if(!strcmp(argv[i], "-m")) {
 			FAILONARGS(i, argc);
-			m.dev_mac_s = argv[i+1];
+			add_mac_to_linked_list(&m.target_linked_list, 0, argv[i+1]); 
 			i++;
 		} else if(!strcmp(argv[i], "-d")) {
 			FAILONARGS(i, argc);
@@ -281,14 +282,6 @@ int read_args(int argc, char *argv[]) {
 }
 
 int parse_args() {
-	if(!m.dev_ip_s) {
-		fprintf(stderr, "IP address of device to wake up not specified!\n");
-		return 1;
-	}
-	if(!m.dev_mac_s) {
-		fprintf(stderr, "MAC (hardware) address of device to wake up not specified!\n");
-		return 1;
-	}
 	if(!m.eth_dev_s) {
 		fprintf(stderr, "Ethernet device to record traffic from not specified!\n");
 		return 1;
@@ -302,30 +295,13 @@ int parse_args() {
 		m.subnet = 0xffffffff;
 	}
 
-	// device MAC
-	int error = sscanf(m.dev_mac_s, "%2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx", &m.dev_mac[0], &m.dev_mac[1],
-									&m.dev_mac[2], &m.dev_mac[3], &m.dev_mac[4], &m.dev_mac[5]);
-	// maybe the user typed it uppercase?
-	if(error != 6) {
-		error = sscanf(m.dev_mac_s, "%2hhX:%2hhX:%2hhX:%2hhX:%2hhX:%2hhX", &m.dev_mac[0], &m.dev_mac[1],
-								&m.dev_mac[2], &m.dev_mac[3], &m.dev_mac[4], &m.dev_mac[5]);
-	}
-	if(error != 6) {
-		fprintf(stderr, "Invalid MAC address: \"%s\"\n", m.dev_mac_s);
-		return 1;
-	}
-
-	// device IP
-	error = sscanf(m.dev_ip_s, "%hhu.%hhu.%hhu.%hhu", &m.dev_ip[0],
-									&m.dev_ip[1], &m.dev_ip[2], &m.dev_ip[3]);
-	if(error != 4) {
-		fprintf(stderr, "Invalid IP address: \"%s\"\n", m.dev_ip_s);
-	}
+	// create target macs, ips and magic packets
+	RETONFAIL(check_linked_list(m.target_linked_list));
 
 	// subnet mask
 	if(m.subnet_s) {
 		int mask_value;
-		error = sscanf(m.subnet_s, "%d", &mask_value);
+		int error = sscanf(m.subnet_s, "%d", &mask_value);
 		if(error != 1 || mask_value < 0 || mask_value > 31) {
 			fprintf(stderr, "Error: Subnet mask must be a value between 0 and 31\n");
 		}
@@ -343,19 +319,7 @@ int parse_args() {
 	return 0;
 }
 
-void create_magic_packet() {
-	m.magic_packet = malloc(102*sizeof(unsigned char));
-
-	// 6 x 0xFF on start of packet
-	memset(m.magic_packet, 0xFF, 6);
-
-	// rest are just copies of the MAC address
-	for(int i = 1; i <= 16; i++) {
-		memcpy(&m.magic_packet[i*6], &m.dev_mac, 6*sizeof(unsigned char));
-	}
-}
-
-int send_magic_packet() {
+int send_magic_packet(unsigned char *magic_packet) {
 	int udpSocket = 1;
 	int broadcast = 1;
 	struct sockaddr_in udpClient, udpServer;
@@ -381,7 +345,7 @@ int send_magic_packet() {
 	udpServer.sin_port = htons(9);
 
 	// set server end point
-	sendto(udpSocket, m.magic_packet, sizeof(unsigned char)*102, 0, (struct sockaddr*) &udpServer, sizeof(udpServer));
+	sendto(udpSocket, magic_packet, sizeof(unsigned char)*102, 0, (struct sockaddr*) &udpServer, sizeof(udpServer));
 
 	// clean after use
 	close(udpSocket);
@@ -442,16 +406,26 @@ int load_config() {
 
 		if(!strcmp("broadcast_ip", name)) {
 			m.broadcast_ip_s = val;
-		} else if(!strcmp("target_ip", name)) {
-			m.dev_ip_s = val;
 		} else if(!strcmp("net_device", name)) {
 			m.eth_dev_s = val;
-		} else if(!strcmp("target_mac", name)) {
-			m.dev_mac_s = val;
 		} else if(!strcmp("subnet", name)) {
 			m.subnet_s = val;
 		} else if(!strcmp("allow_gateway", name)) {
 			m.allow_gateway_s = val;
+		} else if(!strncmp("target_mac", name, 10)) {
+			unsigned int number = 0;
+			if(!sscanf(name, "target_mac_%u", &number)) {
+				fprintf(stderr, "Invalid option '%s', should be like 'target_mac_1' (fxp)", name);
+				return 2;
+			}
+			add_mac_to_linked_list(&m.target_linked_list, number, val);
+		} else if(!strncmp("target_ip", name, 9)) {
+			unsigned int number = 0;
+			if(!sscanf(name, "target_ip_%u", &number)) {
+				fprintf(stderr, "Invalid option '%s', should be like 'target_ip_1' (fxp)");
+				return 2;
+			}
+			add_ip_to_linked_list(&m.target_linked_list, number, val);
 		} else free(val); // not used
 
 		// free unused strings
