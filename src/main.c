@@ -149,7 +149,10 @@ int watch_packets() {
 		// receive a packet
 		data_size = recvfrom(m.sock_raw, m.buffer, 65536, 0, &saddr, (socklen_t*)&saddr_size);
 		if(data_size < 0) {
-			printf("recvfrom error, failed to get packets\n");
+			if(!m.alive) {
+				return 0; //don't print errors for stop
+			}
+			perror("recvfrom failed to get packets");
 			return 1;
 		}
 		// now process the packet
