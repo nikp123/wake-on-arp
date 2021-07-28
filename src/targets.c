@@ -96,14 +96,14 @@ int check_linked_list(struct target *list) {
 }
 
 void destroy_linked_list(struct target *list) {
-	struct target *next = list;
-
-	// jump to the end of the linked list
-	while(next) {
-		list = next;
-		next = list->next;
-		list->next = NULL; // invalidate the pointer because my shit code
-		free(list);
+	if(list->next) {
+		destroy_linked_list(list->next);
+		//list->next don't need to be set to NULL, because we will invalidate the whole list pointer
 	}
+	//ip_s and mac_s need a seperate free call because they was malloced with sscanf
+	free(list->ip_s);
+	free(list->mac_s);
+	free(list);
+	list = NULL; //invalidate the pointer
 }
 

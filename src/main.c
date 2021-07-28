@@ -398,7 +398,7 @@ int load_config() {
 		return 1;
 	}
 
-	char *line = malloc(1);
+	char *line = NULL;
 	size_t len;
 	while(getline(&line, &len, fp) != -1) {
 		char *name, *val;
@@ -433,6 +433,7 @@ int load_config() {
 		free(name);
 		// WARN: if reload is ever implemented, this is a memory leak
 	}
+	if(line) free(line);
 
 	// weird seg. fault on ARMv7 (have to investigate)
 	//fclose(fp);
