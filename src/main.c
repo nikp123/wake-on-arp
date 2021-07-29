@@ -251,8 +251,6 @@ int parse_ethhdr(unsigned char* buffer, int size) {
 }
 
 int read_args(int argc, char *argv[]) {
-	m.allow_gateway_s = NULL; // because C likes to be undefined and shoot itself
-
 	for(int i=1; i<argc; i++) {
 		if(!strcmp(argv[i], "-h")||!strcmp(argv[i], "--help")) {
 			puts(USAGE_INFO);
@@ -425,7 +423,7 @@ int load_config() {
 		} else if(!strncmp("target_ip", name, 9)) {
 			unsigned int number = 0;
 			if(!sscanf(name, "target_ip_%u", &number)) {
-				fprintf(stderr, "Invalid option '%s', should be like 'target_ip_1' (fxp)");
+				fprintf(stderr, "Invalid option '%s', should be like 'target_ip_1' (fxp)", name);
 				return 2;
 			}
 			add_ip_to_linked_list(&m.target_linked_list, number, val);
@@ -442,6 +440,7 @@ int load_config() {
 }
 
 int main(int argc, char *argv[]) {
+	m.allow_gateway_s = NULL; // init config in case it won't be set
 	// priority: load_config < read_args
 	load_config();
 	RETONFAIL(read_args(argc, argv));
