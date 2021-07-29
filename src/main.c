@@ -425,7 +425,7 @@ int load_config() {
 		} else if(!strncmp("target_ip", name, 9)) {
 			unsigned int number = 0;
 			if(!sscanf(name, "target_ip_%u", &number)) {
-				fprintf(stderr, "Invalid option '%s', should be like 'target_ip_1' (fxp)");
+				fprintf(stderr, "Invalid option '%s', should be like 'target_ip_1' (fxp)", name);
 				return 2;
 			}
 			add_ip_to_linked_list(&m.target_linked_list, number, val);
