@@ -52,12 +52,12 @@ const char *USAGE_INFO = \
 "For further info look here: https://github.com/nikp123/wake-on-arp/issues/1#issuecomment-882708765\n";
 
 void cleanup();
-void sig_handler(int);
+void sig_handler();
 int initialize();
 int watch_packets();
-int process_packet(unsigned char* , int);
+int process_packet(unsigned char*);
 int parse_arp(unsigned char *);
-int parse_ethhdr(unsigned char*, int);
+int parse_ethhdr(unsigned char*);
 int get_local_ip();
 int send_magic_packet(unsigned char*);
 
@@ -89,7 +89,7 @@ void cleanup() {
 }
 
 // handle signals, such as CTRL-C
-void sig_handler(int signo) {
+void sig_handler() {
 	m.alive = false;
 }
 
@@ -156,12 +156,12 @@ int watch_packets() {
 			return 1;
 		}
 		// now process the packet
-		RETONFAIL(process_packet(m.buffer, data_size));
+		RETONFAIL(process_packet(m.buffer));
 	}
 	return 0;
 }
 
-int process_packet(unsigned char* buffer, int size) {
+int process_packet(unsigned char* buffer) {
 	// get the IP Header part of this packet, excluding the ethernet header
 	//struct iphdr *iph = (struct iphdr*)(buffer + sizeof(struct ethhdr));
 	
@@ -170,7 +170,7 @@ int process_packet(unsigned char* buffer, int size) {
 	//printf("%u\n", iph->protocol);
 
 	// for now, accept all packets
-	RETONFAIL(parse_ethhdr(buffer, size));
+	RETONFAIL(parse_ethhdr(buffer));
 
 	return 0;
 }
@@ -237,7 +237,7 @@ int parse_arp(unsigned char *data) {
 	return 0;
 }
 
-int parse_ethhdr(unsigned char* buffer, int size) {
+int parse_ethhdr(unsigned char* buffer) {
 	struct ethhdr *eth = (struct ethhdr *)buffer;
 	
 	// convert network-endianess to native endianess
