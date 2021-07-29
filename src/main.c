@@ -52,12 +52,12 @@ const char *USAGE_INFO = \
 "For further info look here: https://github.com/nikp123/wake-on-arp/issues/1#issuecomment-882708765\n";
 
 void cleanup();
-void sig_handler(int);
+void sig_handler();
 int initialize();
 int watch_packets();
-int process_packet(unsigned char* , int);
+int process_packet(unsigned char*);
 int parse_arp(unsigned char *);
-int parse_ethhdr(unsigned char*, int);
+int parse_ethhdr(unsigned char*);
 int get_local_ip();
 int send_magic_packet(unsigned char*);
 
@@ -89,7 +89,7 @@ void cleanup() {
 }
 
 // handle signals, such as CTRL-C
-void sig_handler(int signo) {
+void sig_handler() {
 	m.alive = false;
 }
 
@@ -97,7 +97,7 @@ int initialize() {
 	RETONFAIL(get_local_ip());
 
 	// get gateway ipv4 :)
-	RETONFAIL(get_gateway_ip((unsigned char*)&m.gate_ip, 4, m.eth_dev_s));
+	RETONFAIL(get_gateway_ip((unsigned char*)&m.gate_ip, m.eth_dev_s));
 
 	// attach signal handler
 	struct sigaction action;
@@ -156,12 +156,12 @@ int watch_packets() {
 			return 1;
 		}
 		// now process the packet
-		RETONFAIL(process_packet(m.buffer, data_size));
+		RETONFAIL(process_packet(m.buffer));
 	}
 	return 0;
 }
 
-int process_packet(unsigned char* buffer, int size) {
+int process_packet(unsigned char* buffer) {
 	// get the IP Header part of this packet, excluding the ethernet header
 	//struct iphdr *iph = (struct iphdr*)(buffer + sizeof(struct ethhdr));
 	
@@ -170,7 +170,7 @@ int process_packet(unsigned char* buffer, int size) {
 	//printf("%u\n", iph->protocol);
 
 	// for now, accept all packets
-	RETONFAIL(parse_ethhdr(buffer, size));
+	RETONFAIL(parse_ethhdr(buffer));
 
 	return 0;
 }
@@ -191,10 +191,6 @@ int parse_arp(unsigned char *data) {
 
 	arp_IPv4 = (ns_arp_IPv4_eth_packet_t *) data;
 
-	// sender and target address
-	unsigned char *sa = arp_IPv4->ns_arp_sender_proto_addr;
-	unsigned char *ta = arp_IPv4->ns_arp_target_proto_addr;
-
 	// sender and target hardware
 	//unsigned char *sh = arp_IPv4->ns_arp_sender_hw_addr;
 	//unsigned char *th = arp_IPv4->ns_arp_sender_hw_addr;
@@ -206,13 +202,17 @@ int parse_arp(unsigned char *data) {
 		// if source matches to host
 		// and if target matches send magic
 		unsigned int eth_ip = *((unsigned int*)&m.eth_ip);
-		unsigned int src_ip = *((unsigned int*)sa);
 		unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
+
+		// sender and target address
+		unsigned int src_ip, ta_ip;
+		memcpy(&src_ip, arp_IPv4->ns_arp_sender_proto_addr, sizeof(unsigned int));
+		memcpy(&ta_ip, arp_IPv4->ns_arp_target_proto_addr, sizeof(unsigned int));
 
 		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
 			struct target *link = m.target_linked_list;
 			for(; link; link=link->next) {
-				if(*(unsigned int*)link->ip != *(unsigned int*)ta)
+				if(*(unsigned int*)link->ip != ta_ip)
 					continue;
 
 				if(!m.allow_gateway) {
@@ -225,7 +225,7 @@ int parse_arp(unsigned char *data) {
 				}
 				RETONFAIL(send_magic_packet(link->magic));
 				printf("Magic packet to '");
-				print_ip(*(unsigned int*)ta);
+				print_ip(ta_ip);
 				printf("' sent by '");
 				print_ip(src_ip);
 				puts("'");
@@ -237,7 +237,7 @@ int parse_arp(unsigned char *data) {
 	return 0;
 }
 
-int parse_ethhdr(unsigned char* buffer, int size) {
+int parse_ethhdr(unsigned char* buffer) {
 	struct ethhdr *eth = (struct ethhdr *)buffer;
 	
 	// convert network-endianess to native endianess

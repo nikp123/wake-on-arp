@@ -29,7 +29,7 @@ struct route_info{
 	char ifName[IF_NAMESIZE];
 };
 
-int readNlSock(int sockFd, char *bufPtr, int seqNum, int pId){
+int readNlSock(int sockFd, char *bufPtr, unsigned int seqNum, int pId){
 	struct nlmsghdr *nlHdr;
 	int readLen = 0, msgLen = 0;
 
@@ -70,7 +70,7 @@ int readNlSock(int sockFd, char *bufPtr, int seqNum, int pId){
 
 /* For parsing the route info returned */
 void parseRoutes(struct nlmsghdr *nlHdr, struct route_info *rtInfo,
-		unsigned char *gateway_ip, socklen_t gateway_ip_size, char *net_interface)
+		unsigned char *gateway_ip, char *net_interface)
 {
 	// FIXME: Check if gateway is IPv6 and abort accordingly
 
@@ -120,15 +120,14 @@ void parseRoutes(struct nlmsghdr *nlHdr, struct route_info *rtInfo,
 	return;
 }
 
-int get_gateway_ip(unsigned char *gateway_ip, socklen_t size, char *net_interface)
+int get_gateway_ip(unsigned char *gateway_ip, char *net_interface)
 {
 	struct nlmsghdr *nlMsg;
-	struct rtmsg *rtMsg;
 	struct route_info *rtInfo;
 	char msgBuf[BUFSIZE];
 
-	int sock, len, msgSeq = 0;
-	char buff[1024];
+	int sock, len = 0;
+	unsigned int msgSeq = 0;
 
 	/* Create Socket */
 	if((sock = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE)) < 0)
@@ -139,7 +138,6 @@ int get_gateway_ip(unsigned char *gateway_ip, socklen_t size, char *net_interfac
 
 	/* point the header and the msg structure pointers into the buffer */
 	nlMsg = (struct nlmsghdr *)msgBuf;
-	rtMsg = (struct rtmsg *)NLMSG_DATA(nlMsg);
 
 	/* Fill in the nlmsg header*/
 	nlMsg->nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg)); // Length of message.
@@ -167,7 +165,7 @@ int get_gateway_ip(unsigned char *gateway_ip, socklen_t size, char *net_interfac
 	/* THIS IS THE NETTSTAT -RL code I commented out the printing here and in parse routes */
 	for(;NLMSG_OK(nlMsg,len);nlMsg = NLMSG_NEXT(nlMsg,len)){
 		memset(rtInfo, 0, sizeof(struct route_info));
-		parseRoutes(nlMsg, rtInfo, gateway_ip, size, net_interface);
+		parseRoutes(nlMsg, rtInfo, gateway_ip, net_interface);
 	}
 	free(rtInfo);
 	close(sock);
