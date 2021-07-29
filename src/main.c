@@ -97,7 +97,7 @@ int initialize() {
 	RETONFAIL(get_local_ip());
 
 	// get gateway ipv4 :)
-	RETONFAIL(get_gateway_ip((unsigned char*)&m.gate_ip, 4, m.eth_dev_s));
+	RETONFAIL(get_gateway_ip((unsigned char*)&m.gate_ip, m.eth_dev_s));
 
 	// attach signal handler
 	struct sigaction action;
