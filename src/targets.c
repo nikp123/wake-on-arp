@@ -16,7 +16,7 @@ void create_magic_packet(struct target *link) {
 }
 
 // retuns offset in the linked lsit array to the apropriate id
-struct target *find_or_create_id(struct target **linked_list, int id) {
+struct target *find_or_create_id(struct target **linked_list, unsigned int id) {
 	if(*linked_list == NULL) {
 		*linked_list = calloc(1, sizeof(struct target));
 		(*linked_list)[0].id = id;
@@ -44,12 +44,12 @@ struct target *find_or_create_id(struct target **linked_list, int id) {
 	return link;
 }
 
-void add_mac_to_linked_list(struct target **linked_list, int id, char *string) {
+void add_mac_to_linked_list(struct target **linked_list, unsigned int id, char *string) {
 	struct target *element = find_or_create_id(linked_list, id);
 	element->mac_s = string;
 }
 
-void add_ip_to_linked_list(struct target **linked_list, int id, char *string) {
+void add_ip_to_linked_list(struct target **linked_list, unsigned int id, char *string) {
 	struct target *element = find_or_create_id(linked_list, id);
 	element->ip_s = string;
 }

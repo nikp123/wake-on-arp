@@ -10,5 +10,5 @@ void print_ip(unsigned int ip);
 
 int check_linked_list(struct target *list);
 void destroy_linked_list(struct target *list);
-void add_ip_to_linked_list(struct target **linked_list, int id, char *string);
-void add_mac_to_linked_list(struct target **linked_list, int id, char *string);
+void add_ip_to_linked_list(struct target **linked_list, unsigned int id, char *string);
+void add_mac_to_linked_list(struct target **linked_list, unsigned int id, char *string);
