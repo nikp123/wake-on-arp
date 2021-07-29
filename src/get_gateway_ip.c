@@ -29,7 +29,7 @@ struct route_info{
 	char ifName[IF_NAMESIZE];
 };
 
-int readNlSock(int sockFd, char *bufPtr, int seqNum, int pId){
+int readNlSock(int sockFd, char *bufPtr, unsigned int seqNum, int pId){
 	struct nlmsghdr *nlHdr;
 	int readLen = 0, msgLen = 0;
 
@@ -126,7 +126,8 @@ int get_gateway_ip(unsigned char *gateway_ip, char *net_interface)
 	struct route_info *rtInfo;
 	char msgBuf[BUFSIZE];
 
-	int sock, len, msgSeq = 0;
+	int sock, len = 0;
+	unsigned int msgSeq = 0;
 
 	/* Create Socket */
 	if((sock = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE)) < 0)
