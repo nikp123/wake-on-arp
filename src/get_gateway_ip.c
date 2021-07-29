@@ -29,7 +29,7 @@ struct route_info{
 	char ifName[IF_NAMESIZE];
 };
 
-int readNlSock(int sockFd, char *bufPtr, unsigned int seqNum, int pId){
+int readNlSock(int sockFd, char *bufPtr, unsigned int seqNum, unsigned int pId){
 	struct nlmsghdr *nlHdr;
 	int readLen = 0, msgLen = 0;
 
