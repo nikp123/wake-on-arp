@@ -251,8 +251,6 @@ int parse_ethhdr(unsigned char* buffer, int size) {
 }
 
 int read_args(int argc, char *argv[]) {
-	m.allow_gateway_s = NULL; // because C likes to be undefined and shoot itself
-
 	for(int i=1; i<argc; i++) {
 		if(!strcmp(argv[i], "-h")||!strcmp(argv[i], "--help")) {
 			puts(USAGE_INFO);
@@ -442,6 +440,7 @@ int load_config() {
 }
 
 int main(int argc, char *argv[]) {
+	m.allow_gateway_s = NULL; // init config in case it won't be set
 	// priority: load_config < read_args
 	load_config();
 	RETONFAIL(read_args(argc, argv));
