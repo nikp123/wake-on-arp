@@ -10,7 +10,7 @@ LDFLAGS = -O2
 all: wake-on-arp
 
 debug: LDFLAGS = -static-libasan
-debug: CFLAGS += -g -DDEBUG -fsanitize=address,undefined,pointer-compare,pointer-subtract -fno-omit-frame-pointer
+debug: CFLAGS += -g -DDEBUG -Wall -Wextra -fsanitize=address,undefined,pointer-compare,pointer-subtract -fno-omit-frame-pointer
 debug: wake-on-arp
 
 wake-on-arp: $(obj)
