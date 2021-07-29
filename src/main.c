@@ -191,10 +191,6 @@ int parse_arp(unsigned char *data) {
 
 	arp_IPv4 = (ns_arp_IPv4_eth_packet_t *) data;
 
-	// sender and target address
-	unsigned char *sa = arp_IPv4->ns_arp_sender_proto_addr;
-	unsigned char *ta = arp_IPv4->ns_arp_target_proto_addr;
-
 	// sender and target hardware
 	//unsigned char *sh = arp_IPv4->ns_arp_sender_hw_addr;
 	//unsigned char *th = arp_IPv4->ns_arp_sender_hw_addr;
@@ -206,13 +202,17 @@ int parse_arp(unsigned char *data) {
 		// if source matches to host
 		// and if target matches send magic
 		unsigned int eth_ip = *((unsigned int*)&m.eth_ip);
-		unsigned int src_ip = *((unsigned int*)sa);
 		unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
+
+		// sender and target address
+		unsigned int src_ip, ta_ip;
+		memcpy(&src_ip, arp_IPv4->ns_arp_sender_proto_addr, sizeof(unsigned int));
+		memcpy(&ta_ip, arp_IPv4->ns_arp_target_proto_addr, sizeof(unsigned int));
 
 		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
 			struct target *link = m.target_linked_list;
 			for(; link; link=link->next) {
-				if(*(unsigned int*)link->ip != *(unsigned int*)ta)
+				if(*(unsigned int*)link->ip != ta_ip)
 					continue;
 
 				if(!m.allow_gateway) {
@@ -225,7 +225,7 @@ int parse_arp(unsigned char *data) {
 				}
 				RETONFAIL(send_magic_packet(link->magic));
 				printf("Magic packet to '");
-				print_ip(*(unsigned int*)ta);
+				print_ip(ta_ip);
 				printf("' sent by '");
 				print_ip(src_ip);
 				puts("'");
