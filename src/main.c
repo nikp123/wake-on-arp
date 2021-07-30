@@ -221,6 +221,7 @@ int parse_arp(unsigned char *data) {
 							puts("Blocked ARP wake-up by gateway");
 							fflush(stdout);
 						#endif
+						break;
 					}
 				}
 				RETONFAIL(send_magic_packet(link->magic));
