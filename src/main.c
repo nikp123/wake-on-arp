@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <signal.h>
+#include <byteswap.h>
 
 #include "ns_arp.h"
 #include "ns_arp_packet.h"
@@ -309,7 +310,8 @@ int parse_args() {
 		}
 
 		// calculate proper net mask
-		m.subnet = 0xffffffff >> (32-mask_value);  
+		unsigned int subnet_bigendian = 0xffffffff << (32-mask_value);
+		m.subnet = __bswap_32(subnet_bigendian);
 	}
 
 	// should we allow gateway ARP requests
