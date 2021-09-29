@@ -7,8 +7,7 @@ int get_gateway_ip(unsigned char *gateway_ip, char *net_interface);
 bool the_great_bool_destringifier(const char *s);
 void print_ip(unsigned int ip);
 
-
-int check_linked_list(struct target *list);
-void destroy_linked_list(struct target *list);
-void add_ip_to_linked_list(struct target **linked_list, unsigned int id, char *string);
-void add_mac_to_linked_list(struct target **linked_list, unsigned int id, char *string);
+void target_ip_add(struct target *list, unsigned int id, char *string);
+void target_mac_add(struct target *list, unsigned int id, char *string);
+int  targets_configure(struct target *list);
+void targets_destroy(struct target *list);

@@ -70,7 +70,7 @@ struct main {
 	char *subnet_s;
 	char *allow_gateway_s;
 
-	struct target *target_linked_list;
+	struct target *target_list;
 
 	uint32_t *source_blacklist;
 
@@ -86,7 +86,7 @@ struct main {
 
 void cleanup() {
 	arr_free(m.source_blacklist);
-	destroy_linked_list(m.target_linked_list);
+	targets_destroy(m.target_list);
 	close(m.sock_raw);
 	free(m.buffer);
 }
@@ -226,8 +226,9 @@ int parse_arp(unsigned char *data) {
 		memcpy(&ta_ip, arp_IPv4->ns_arp_target_proto_addr, sizeof(unsigned int));
 
 		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
-			struct target *link = m.target_linked_list;
-			for(; link; link=link->next) {
+			for(size_t i = 0; i < arr_count(m.target_list); i++) {
+				struct target *link = &m.target_list[i];
+
 				if(*(unsigned int*)link->ip != ta_ip)
 					continue;
 
@@ -276,11 +277,11 @@ int read_args(int argc, char *argv[]) {
 			return 0;
 		} else if(!strcmp(argv[i], "-i")) {
 			FAILONARGS(i, argc);
-			add_ip_to_linked_list(&m.target_linked_list, 0, argv[i+1]);
+			target_ip_add(m.target_list, 0, strdup(argv[i+1]));
 			i++;
 		} else if(!strcmp(argv[i], "-m")) {
 			FAILONARGS(i, argc);
-			add_mac_to_linked_list(&m.target_linked_list, 0, argv[i+1]);
+			target_mac_add(m.target_list, 0, strdup(argv[i+1]));
 			i++;
 		} else if(!strcmp(argv[i], "-d")) {
 			FAILONARGS(i, argc);
@@ -316,7 +317,7 @@ int parse_args() {
 	}
 
 	// create target macs, ips and magic packets
-	RETONFAIL(check_linked_list(m.target_linked_list));
+	RETONFAIL(targets_configure(m.target_list));
 
 	// subnet mask
 	if(m.subnet_s) {
@@ -414,6 +415,7 @@ int load_config() {
 
 	// init variables
 	arr_init(m.source_blacklist);
+	arr_init(m.target_list);
 
 	char *line = NULL;
 	size_t len;
@@ -436,14 +438,14 @@ int load_config() {
 				fprintf(stderr, "Invalid option '%s', should be like 'target_mac_1' (fxp)", name);
 				return 2;
 			}
-			add_mac_to_linked_list(&m.target_linked_list, number, val);
+			target_mac_add(m.target_list, number, val);
 		} else if(!strncmp("target_ip", name, 9)) {
 			unsigned int number = 0;
 			if(!sscanf(name, "target_ip_%u", &number)) {
 				fprintf(stderr, "Invalid option '%s', should be like 'target_ip_1' (fxp)", name);
 				return 2;
 			}
-			add_ip_to_linked_list(&m.target_linked_list, number, val);
+			target_ip_add(m.target_list, number, val);
 		} else if(!strcmp("source_exclude", name)) {
 			uint8_t address[4];
 			// assuming IPv4

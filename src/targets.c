@@ -3,9 +3,10 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "array.h"
 #include "data-types.h"
 
-void create_magic_packet(struct target *link) {
+void target_generate_magic(struct target *link) {
 	// 6 x 0xFF on start of packet
 	memset(link->magic, 0xFF, 6);
 
@@ -15,56 +16,38 @@ void create_magic_packet(struct target *link) {
 	}
 }
 
-// retuns offset in the linked lsit array to the apropriate id
-struct target *find_or_create_id(struct target **linked_list, unsigned int id) {
-	if(*linked_list == NULL) {
-		*linked_list = calloc(1, sizeof(struct target));
-		(*linked_list)[0].id = id;
-		return (*linked_list);
-	} 
-
-	unsigned int i = 0;
-	struct target *link = (*linked_list);
-	struct target *last_link = 0;
-	while(link) {
-		if(link->id == id)
-			return link;
-		else {
-			last_link = link;
-			link = link->next;
-			i++;
-		}
+void target_mac_add(struct target *list, unsigned int id, char *string) {
+	if(id >= arr_count(list)) {
+		// the hope is that new targets have "populated" unset
+		arr_resize_clean(list, id+1);
 	}
 
-	// if we've managed to break out of that loop without returning, that means that the id doesn't exist
-	link = last_link;
-	link->next = calloc(1, sizeof(struct target));
-	link = link->next;
-	link->id = id;
-	return link;
+	list[id].populated = true;
+	list[id].mac_s = string;
 }
 
-void add_mac_to_linked_list(struct target **linked_list, unsigned int id, char *string) {
-	struct target *element = find_or_create_id(linked_list, id);
-	element->mac_s = string;
+void target_ip_add(struct target *list, unsigned int id, char *string) {
+	if(id >= arr_count(list)) {
+		// the hope is that new targets have "populated" unset
+		arr_resize_clean(list, id+1);
+	}
+
+	list[id].populated = true;
+	list[id].ip_s = string;
 }
 
-void add_ip_to_linked_list(struct target **linked_list, unsigned int id, char *string) {
-	struct target *element = find_or_create_id(linked_list, id);
-	element->ip_s = string;
-}
+int targets_configure(struct target *list) {
+	for(size_t i = 0; i < arr_count(list); i++) {
+		if(!list[i].populated) // skip unpopulated ids
+			continue;
 
-int check_linked_list(struct target *list) {
-	struct target *ta = list;
-	while(ta != NULL) {
+		struct target *ta = &list[i];
 		if(ta->mac_s == NULL) {
-			fprintf(stderr, "Missing element 'target_mac_%u'\n",
-					ta->id);
+			fprintf(stderr, "Missing element 'target_mac_%lu'\n", i);
 			return 1;
 		}
 		if(ta->ip_s == NULL) {
-			fprintf(stderr, "Missing element 'target_ip_%u'\n",
-					ta->id);
+			fprintf(stderr, "Missing element 'target_ip_%lu'\n", i);
 			return 1;
 		}
 
@@ -77,7 +60,7 @@ int check_linked_list(struct target *list) {
 				&ta->mac[0], &ta->mac[1], &ta->mac[2], &ta->mac[3], &ta->mac[4], &ta->mac[5]);
 		}
 		if(error != 6) {
-			fprintf(stderr, "Invalid 'ta_mac_%u' address: \"%s\"\n", ta->id, ta->mac_s);
+			fprintf(stderr, "Invalid 'ta_mac_%lu' address: \"%s\"\n", i, ta->mac_s);
 			return 2;
 		}
 
@@ -85,25 +68,22 @@ int check_linked_list(struct target *list) {
 		error = sscanf(ta->ip_s, "%hhu.%hhu.%hhu.%hhu", &ta->ip[0],
 									&ta->ip[1], &ta->ip[2], &ta->ip[3]);
 		if(error != 4) {
-			fprintf(stderr, "Invalid 'ta_ip_%u' address: \"%s\"\n", ta->id, ta->ip_s);
+			fprintf(stderr, "Invalid 'ta_ip_%lu' address: \"%s\"\n", i, ta->ip_s);
 			return 2;
 		}
 
-		create_magic_packet(ta);
-		ta = ta->next;
+		target_generate_magic(ta);
 	}
+
 	return 0;
 }
 
-void destroy_linked_list(struct target *list) {
-	if(list->next) {
-		destroy_linked_list(list->next);
-		//list->next don't need to be set to NULL, because we will invalidate the whole list pointer
+void targets_destroy(struct target *list) {
+	for(size_t i = 0; i < arr_count(list); i++) {
+		//ip_s and mac_s need a seperate free call because they was malloced with sscanf
+		free(list[i].ip_s);
+		free(list[i].mac_s);
 	}
-	//ip_s and mac_s need a seperate free call because they was malloced with sscanf
-	free(list->ip_s);
-	free(list->mac_s);
-	free(list);
-	list = NULL; //invalidate the pointer
+	arr_free(list);
 }
 

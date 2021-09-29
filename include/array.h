@@ -4,6 +4,7 @@
 #ifndef ARRAY_H
 #define ARRAY_H
 
+#include <string.h>
 #include <stdlib.h>
 
 struct _ArrayHeader {
@@ -41,6 +42,15 @@ struct _ArrayHeader {
 #define arr_resize(a, n) do { \
    arr_reserve((a), (n)); \
    _arr_header(a)->count = n; \
+} while(0)
+
+#define arr_resize_clean(a, n) do { \
+   size_t old_count = _arr_header(a)->count; \
+   arr_reserve((a), (n)); \
+   _arr_header(a)->count = n; \
+   void *addr = ((void*)a) + sizeof(typeof(*a))*old_count; \
+   size_t count = (n-old_count)*sizeof(typeof(*a)); \
+   memset(addr, 0x00, count);\
 } while(0)
 
 // Take a vararg list to support compound literals
