@@ -48,7 +48,7 @@ struct _ArrayHeader {
    size_t old_count = _arr_header(a)->count; \
    arr_reserve((a), (n)); \
    _arr_header(a)->count = n; \
-   void *addr = ((void*)a) + sizeof(typeof(*a))*old_count; \
+   uint8_t *addr = ((void*)a) + sizeof(typeof(*a))*old_count; \
    size_t count = (n-old_count)*sizeof(typeof(*a)); \
    memset(addr, 0x00, count);\
 } while(0)
