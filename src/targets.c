@@ -19,7 +19,7 @@ void target_generate_magic(struct target *link) {
 void target_mac_add(struct target *list, unsigned int id, char *string) {
 	if(id >= arr_count(list)) {
 		// the hope is that new targets have "populated" unset
-		arr_resize_clean(list, id+1);
+		arr_resize_zero(list, id+1);
 	}
 
 	list[id].populated = true;
@@ -29,7 +29,7 @@ void target_mac_add(struct target *list, unsigned int id, char *string) {
 void target_ip_add(struct target *list, unsigned int id, char *string) {
 	if(id >= arr_count(list)) {
 		// the hope is that new targets have "populated" unset
-		arr_resize_clean(list, id+1);
+		arr_resize_zero(list, id+1);
 	}
 
 	list[id].populated = true;

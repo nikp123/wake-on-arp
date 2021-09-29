@@ -44,13 +44,13 @@ struct _ArrayHeader {
    _arr_header(a)->count = n; \
 } while(0)
 
-#define arr_resize_clean(a, n) do { \
-   size_t old_count = _arr_header(a)->count; \
-   arr_reserve((a), (n)); \
-   _arr_header(a)->count = n; \
-   uint8_t *addr = ((void*)a) + sizeof(typeof(*a))*old_count; \
-   size_t count = (n-old_count)*sizeof(typeof(*a)); \
-   memset(addr, 0x00, count);\
+#define arr_resize_zero(a, n) do { \
+   size_t initial_count = arr_count(a); \
+   arr_resize((a), (n)); \
+   if(arr_count(a) > initial_count) \
+      memset( \
+         &(a)[initial_count], 0, \
+         (arr_count(a) - initial_count) * sizeof(*a)); \
 } while(0)
 
 // Take a vararg list to support compound literals
