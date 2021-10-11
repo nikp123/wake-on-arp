@@ -1,4 +1,5 @@
 # wake-on-arp
+[![Build](https://github.com/nikp123/wake-on-arp/actions/workflows/build.yml/badge.svg)](https://github.com/nikp123/wake-on-arp/actions/workflows/build.yml)
 [![Donation](https://img.shields.io/liberapay/patrons/nikp123.svg?logo=liberapay)](https://liberapay.com/nikp123/donate)
 
 An commandline daemon that wakes up a device on the local network when accessed
@@ -39,7 +40,7 @@ Most programmers are lazy bastards.
 Use-case 1: Large server that drains Watts upon Watts of power and your landowner is
  yelling at you because of the high-power bills. But you have a small and power-efficient
  secondary device, such as a Raspberry Pi that could indeed run 24/7 without using much power. 
- Using the Raspberry Pi, you could route all the big server traffic to the Raspberry Pi and 
+ Using the Raspberry Pi, you could route all the big server traffic to the Raspberry Pi and
  using simple proxies reroute it back to the big server. Nginx supports this out of the box.
  This assumes you know how to automatically suspend your server, which I won't get into.
 
