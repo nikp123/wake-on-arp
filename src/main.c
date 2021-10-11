@@ -22,6 +22,7 @@
 #include "ns_arp.h"
 #include "ns_arp_packet.h"
 
+#include "array.h"
 #include "functions.h"
 
 #ifndef CONFIG_PREFIX
@@ -69,14 +70,14 @@ struct main {
 	char *subnet_s;
 	char *allow_gateway_s;
 
-	struct target *target_linked_list;
+	struct target *target_list;
+
+	uint32_t *source_blacklist;
 
 	unsigned char eth_ip[4];
 	unsigned char gate_ip[4];
 
 	unsigned int  subnet;
-
-	bool allow_gateway;
 
 	unsigned char *buffer;
 	int sock_raw;
@@ -84,7 +85,8 @@ struct main {
 } m;
 
 void cleanup() {
-	destroy_linked_list(m.target_linked_list);
+	arr_free(m.source_blacklist);
+	targets_destroy(m.target_list);
 	close(m.sock_raw);
 	free(m.buffer);
 }
@@ -123,21 +125,35 @@ int initialize() {
 		perror("socket error");
 		return 1;
 	}
-	
-	unsigned int eth_ip = *((unsigned int*)&m.eth_ip);
-	unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
+
+	uint32_t eth_ip =     *((uint32_t*)&m.eth_ip);
+	uint32_t gateway_ip = *((uint32_t*)&m.gate_ip);
+
+	// add gateway to blacklist if needed
+	bool allow_gateway = false;
+	if(m.allow_gateway_s) {
+		allow_gateway = the_great_bool_destringifier(m.allow_gateway_s);
+	}
+
+	if(!allow_gateway) {
+		arr_add(m.source_blacklist, gateway_ip);
+	}
 
 	printf("Listen for ARP requests from Source IPs ");
 	print_ip(eth_ip&m.subnet);
 	printf(" - ");
 	print_ip(eth_ip|~m.subnet);
-	if(!m.allow_gateway) {
-		printf(" but ignore ");
-		print_ip(gateway_ip);
+	if(arr_count(m.source_blacklist) != 0) {
+		printf(" but ignore the following IP(s):");
+
+		for(size_t i = 0; i < arr_count(m.source_blacklist); i++) {
+			printf(" ");
+			print_ip(m.source_blacklist[i]);
+		}
 	}
 	puts("");
 	fflush(stdout); //to see this message in systemctl status
-	
+
 	return 0;
 }
 
@@ -165,7 +181,7 @@ int watch_packets() {
 int process_packet(unsigned char* buffer) {
 	// get the IP Header part of this packet, excluding the ethernet header
 	//struct iphdr *iph = (struct iphdr*)(buffer + sizeof(struct ethhdr));
-	
+
 	// TODO: Research packet types for ARP
 	// Known types are: 157 (from router), 87 and 129
 	//printf("%u\n", iph->protocol);
@@ -203,7 +219,6 @@ int parse_arp(unsigned char *data) {
 		// if source matches to host
 		// and if target matches send magic
 		unsigned int eth_ip = *((unsigned int*)&m.eth_ip);
-		unsigned int gateway_ip = *((unsigned int*)&m.gate_ip);
 
 		// sender and target address
 		unsigned int src_ip, ta_ip;
@@ -211,20 +226,23 @@ int parse_arp(unsigned char *data) {
 		memcpy(&ta_ip, arp_IPv4->ns_arp_target_proto_addr, sizeof(unsigned int));
 
 		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
-			struct target *link = m.target_linked_list;
-			for(; link; link=link->next) {
+			for(size_t i = 0; i < arr_count(m.target_list); i++) {
+				struct target *link = &m.target_list[i];
+
 				if(*(unsigned int*)link->ip != ta_ip)
 					continue;
 
-				if(!m.allow_gateway) {
-					if(src_ip == gateway_ip) {
-						#ifdef DEBUG
-							puts("Blocked ARP wake-up by gateway");
-							fflush(stdout);
-						#endif
-						break;
-					}
+				int blacklist_found = -1;
+				arr_find(m.source_blacklist, src_ip, &blacklist_found);
+				if(blacklist_found > -1) {
+					#ifdef DEBUG
+					printf("Blocked '");
+					print_ip(src_ip);
+					puts("' from the blacklist!");
+					#endif
+					break;
 				}
+
 				RETONFAIL(send_magic_packet(link->magic));
 				printf("Magic packet to '");
 				print_ip(ta_ip);
@@ -241,7 +259,7 @@ int parse_arp(unsigned char *data) {
 
 int parse_ethhdr(unsigned char* buffer) {
 	struct ethhdr *eth = (struct ethhdr *)buffer;
-	
+
 	// convert network-endianess to native endianess
 	unsigned short eth_protocol = ntohs(eth->h_proto);
 
@@ -259,11 +277,11 @@ int read_args(int argc, char *argv[]) {
 			return 0;
 		} else if(!strcmp(argv[i], "-i")) {
 			FAILONARGS(i, argc);
-			add_ip_to_linked_list(&m.target_linked_list, 0, argv[i+1]); 
+			target_ip_add(m.target_list, 0, strdup(argv[i+1]));
 			i++;
 		} else if(!strcmp(argv[i], "-m")) {
 			FAILONARGS(i, argc);
-			add_mac_to_linked_list(&m.target_linked_list, 0, argv[i+1]); 
+			target_mac_add(m.target_list, 0, strdup(argv[i+1]));
 			i++;
 		} else if(!strcmp(argv[i], "-d")) {
 			FAILONARGS(i, argc);
@@ -299,7 +317,7 @@ int parse_args() {
 	}
 
 	// create target macs, ips and magic packets
-	RETONFAIL(check_linked_list(m.target_linked_list));
+	RETONFAIL(targets_configure(m.target_list));
 
 	// subnet mask
 	if(m.subnet_s) {
@@ -312,12 +330,6 @@ int parse_args() {
 		// calculate proper net mask
 		unsigned int subnet_bigendian = 0xffffffff << (32-mask_value);
 		m.subnet = __bswap_32(subnet_bigendian);
-	}
-
-	// should we allow gateway ARP requests
-	m.allow_gateway = false;
-	if(m.allow_gateway_s) {
-		m.allow_gateway = the_great_bool_destringifier(m.allow_gateway_s);
 	}
 
 	return 0;
@@ -401,6 +413,10 @@ int load_config() {
 		return 1;
 	}
 
+	// init variables
+	arr_init(m.source_blacklist);
+	arr_init(m.target_list);
+
 	char *line = NULL;
 	size_t len;
 	while(getline(&line, &len, fp) != -1) {
@@ -422,14 +438,32 @@ int load_config() {
 				fprintf(stderr, "Invalid option '%s', should be like 'target_mac_1' (fxp)", name);
 				return 2;
 			}
-			add_mac_to_linked_list(&m.target_linked_list, number, val);
+			target_mac_add(m.target_list, number, val);
 		} else if(!strncmp("target_ip", name, 9)) {
 			unsigned int number = 0;
 			if(!sscanf(name, "target_ip_%u", &number)) {
 				fprintf(stderr, "Invalid option '%s', should be like 'target_ip_1' (fxp)", name);
 				return 2;
 			}
-			add_ip_to_linked_list(&m.target_linked_list, number, val);
+			target_ip_add(m.target_list, number, val);
+		} else if(!strcmp("source_exclude", name)) {
+			uint8_t address[4];
+			// assuming IPv4
+
+			int err = sscanf(val, "%hhu.%hhu.%hhu.%hhu",
+				&address[0], &address[1], &address[2], &address[3]);
+
+			if(err != 4) {
+				fprintf(stderr, "Invalid IP address specified \"%s\", should be"
+						" in the following format: \"ab.cd.ef.gh\"\n", val);
+				return 2;
+			}
+
+			// add 'em
+			uint32_t address_ptr = *((uint32_t*)&address);
+			arr_add(m.source_blacklist, address_ptr);
+
+			free(val);
 		} else free(val); // not used
 
 		// free unused strings
