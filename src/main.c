@@ -329,7 +329,7 @@ int parse_args() {
 
 		// calculate proper net mask
 		unsigned int subnet_bigendian = 0xffffffff << (32-mask_value);
-		m.subnet = __bswap_32(subnet_bigendian);
+		m.subnet = __builtin_bswap32(subnet_bigendian);
 	}
 
 	return 0;
