@@ -1,29 +1,144 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdbool.h>
+#include <time.h>
 #include <errno.h>
 #include <netdb.h>
-#include <stdio.h>		// for standard things
-#include <stdlib.h>		// malloc
-#include <string.h>		// strlen
-#include <stdbool.h>
-
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <netinet/ip.h>				// provides declarations for ip header
-#include <netinet/if_ether.h>		// for ETH_P_ALL
-#include <net/ethernet.h>			// for ether_header
+#include <netinet/ip.h>
+#include <netinet/if_ether.h>
+#include <net/ethernet.h>
 #include <net/if.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <signal.h>
 #include <byteswap.h>
 
+#include "ns_config.h"
 #include "ns_arp.h"
 #include "ns_arp_packet.h"
-
 #include "array.h"
 #include "functions.h"
+
+#define DEBUG_PRINT(...) do { if (m.debug) printf(__VA_ARGS__); } while(0)
+
+// Main program state
+struct main {
+    char *eth_dev_s;
+    char *eth_ip_s;
+    char *broadcast_ip_s;
+    char *subnet_s;
+    char *allow_gateway_s;
+
+    struct target *target_list;
+
+    uint32_t *source_blacklist;
+    uint32_t *source_allowlist;
+
+    // DNS cache for hostnames in allow/exclude lists
+    dns_cache_t exclude_dns_cache;
+    dns_cache_t include_dns_cache;
+    int dns_cache_refresh_interval;
+
+    unsigned char eth_ip[4];
+    unsigned char gate_ip[4];
+
+    unsigned int  subnet;
+
+    unsigned char *buffer;
+    int sock_raw;
+    bool alive;
+    bool debug;
+} m;
+// Utility: resolve hostname to IPv4 address (returns 0 on success)
+int resolve_hostname(const char *hostname, uint32_t *out_ip) {
+	if (!hostname || !out_ip) return -1;
+	
+	struct addrinfo hints, *res = NULL;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	
+	int err = getaddrinfo(hostname, NULL, &hints, &res);
+	if (err != 0 || !res) return -1;
+	
+	struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
+	if (!addr || res->ai_addrlen < sizeof(struct sockaddr_in)) {
+		freeaddrinfo(res);
+		return -1;
+	}
+	
+	*out_ip = addr->sin_addr.s_addr;
+	freeaddrinfo(res);
+	return 0;
+}
+
+// Non-blocking DNS cache refresh (only refresh if really needed and been a while)
+void refresh_dns_cache_if_needed(dns_cache_t *cache) {
+	if (!cache) return;
+	
+	time_t now = time(NULL);
+	if (cache->last_refresh == 0 || (now - cache->last_refresh) >= DEFAULT_DNS_CACHE_REFRESH_INTERVAL) {
+		DEBUG_PRINT("Refreshing DNS cache with %zu entries\n", cache->count);
+		
+		// Bounds check to prevent buffer overflow
+		size_t safe_count = (cache->count > MAX_SOURCE_LIST_ENTRIES) ? MAX_SOURCE_LIST_ENTRIES : cache->count;
+		
+		for (size_t i = 0; i < safe_count; ++i) {
+			// Additional safety checks
+			if (!cache->entries[i].entry || strlen(cache->entries[i].entry) == 0) continue;
+			
+			if (cache->entries[i].is_hostname) {
+				DEBUG_PRINT("Resolving hostname: %s\n", cache->entries[i].entry);
+				uint32_t resolved_ip;
+				if (resolve_hostname(cache->entries[i].entry, &resolved_ip) != 0) {
+					cache->entries[i].ip = 0; // Mark as unresolved
+					DEBUG_PRINT("Failed to resolve: %s\n", cache->entries[i].entry);
+				} else {
+					cache->entries[i].ip = resolved_ip;
+				}
+			} else {
+				// Parse as IPv4 string
+				uint8_t address[4];
+				int err = sscanf(cache->entries[i].entry, "%hhu.%hhu.%hhu.%hhu",
+					&address[0], &address[1], &address[2], &address[3]);
+				if (err == 4) {
+					// Safe conversion avoiding unaligned access
+					cache->entries[i].ip = ((uint32_t)address[0]) |
+					                       ((uint32_t)address[1] << 8) |
+					                       ((uint32_t)address[2] << 16) |
+					                       ((uint32_t)address[3] << 24);
+				} else {
+					cache->entries[i].ip = 0;
+				}
+			}
+		}
+		cache->last_refresh = now;
+	}
+}
+
+// Non-blocking DNS cache refresh (only refresh if really needed and been a while)
+void refresh_dns_cache_if_needed_nonblocking(dns_cache_t *cache) {
+	if (!cache) return;
+	
+	static time_t last_any_refresh = 0;
+	time_t now = time(NULL);
+	
+	// Only refresh if it's been at least the full interval since ANY refresh
+	if (last_any_refresh != 0 && (now - last_any_refresh) < DEFAULT_DNS_CACHE_REFRESH_INTERVAL) {
+		return; // Not time yet, skip to avoid blocking
+	}
+	
+	// Do the refresh (this might take time but only happens every 5 minutes)
+	refresh_dns_cache_if_needed(cache);
+	last_any_refresh = now;
+}
 
 #ifndef CONFIG_PREFIX
 	#error "Please specify CONFIG_PREFIX (usually /etc on Linux)"
@@ -51,7 +166,8 @@ const char *USAGE_INFO = \
 "\t-b - broadcast IP address (eg. 192.168.1.255)\n"
 "\t-s - subnet IP mask (eg. 24)\n"
 "\t-ag - send magic packet even if the ARP came from the router/gateway (disabled by default). "
-"For further info look here: https://github.com/nikp123/wake-on-arp/issues/1#issuecomment-882708765\n";
+"For further info look here: https://github.com/nikp123/wake-on-arp/issues/1#issuecomment-882708765\n"
+"\t--debug - enable verbose debug output\n";
 
 void cleanup();
 void sig_handler();
@@ -63,32 +179,43 @@ int parse_ethhdr(unsigned char*);
 int get_local_ip();
 int send_magic_packet(unsigned char*);
 
-struct main {
-	char *eth_dev_s;
-	char *eth_ip_s;
-	char *broadcast_ip_s;
-	char *subnet_s;
-	char *allow_gateway_s;
-
-	struct target *target_list;
-
-	uint32_t *source_blacklist;
-
-	unsigned char eth_ip[4];
-	unsigned char gate_ip[4];
-
-	unsigned int  subnet;
-
-	unsigned char *buffer;
-	int sock_raw;
-	bool alive;
-} m;
-
 void cleanup() {
-	arr_free(m.source_blacklist);
-	targets_destroy(m.target_list);
-	close(m.sock_raw);
-	free(m.buffer);
+	DEBUG_PRINT("Cleaning up resources\n");
+	
+	if (m.source_blacklist) {
+		arr_free(m.source_blacklist);
+		m.source_blacklist = NULL;
+	}
+	if (m.source_allowlist) {
+		arr_free(m.source_allowlist);
+		m.source_allowlist = NULL;
+	}
+	if (m.target_list) {
+		targets_destroy(m.target_list);
+		m.target_list = NULL;
+	}
+	if (m.sock_raw > 0) {
+		close(m.sock_raw);
+		m.sock_raw = 0;
+	}
+	if (m.buffer) {
+		free(m.buffer);
+		m.buffer = NULL;
+	}
+	
+	// Clean up DNS cache entries
+	for (size_t i = 0; i < m.exclude_dns_cache.count && i < MAX_SOURCE_LIST_ENTRIES; ++i) {
+		if (m.exclude_dns_cache.entries[i].entry) {
+			free(m.exclude_dns_cache.entries[i].entry);
+			m.exclude_dns_cache.entries[i].entry = NULL;
+		}
+	}
+	for (size_t i = 0; i < m.include_dns_cache.count && i < MAX_SOURCE_LIST_ENTRIES; ++i) {
+		if (m.include_dns_cache.entries[i].entry) {
+			free(m.include_dns_cache.entries[i].entry);
+			m.include_dns_cache.entries[i].entry = NULL;
+		}
+	}
 }
 
 // handle signals, such as CTRL-C
@@ -143,14 +270,42 @@ int initialize() {
 	print_ip(eth_ip&m.subnet);
 	printf(" - ");
 	print_ip(eth_ip|~m.subnet);
+	
+	// Show allowlist information
+	if(arr_count(m.source_allowlist) != 0) {
+		printf("\nAllowlist (only these sources will trigger wake-up):");
+		for(size_t i = 0; i < m.include_dns_cache.count; i++) {
+			if(m.include_dns_cache.entries[i].entry) {
+				printf(" %s", m.include_dns_cache.entries[i].entry);
+				if(m.include_dns_cache.entries[i].ip != 0) {
+					printf("(");
+					print_ip(m.include_dns_cache.entries[i].ip);
+					printf(")");
+				}
+			}
+		}
+	}
+	
+	// Show blocklist information  
 	if(arr_count(m.source_blacklist) != 0) {
-		printf(" but ignore the following IP(s):");
-
-		for(size_t i = 0; i < arr_count(m.source_blacklist); i++) {
+		printf("\nBlocklist (these sources will be ignored):");
+		for(size_t i = 0; i < m.exclude_dns_cache.count; i++) {
+			if(m.exclude_dns_cache.entries[i].entry) {
+				printf(" %s", m.exclude_dns_cache.entries[i].entry);
+				if(m.exclude_dns_cache.entries[i].ip != 0) {
+					printf("(");
+					print_ip(m.exclude_dns_cache.entries[i].ip);
+					printf(")");
+				}
+			}
+		}
+		// Also show any IPs added directly (like gateway)
+		for(size_t i = m.exclude_dns_cache.count; i < arr_count(m.source_blacklist); i++) {
 			printf(" ");
 			print_ip(m.source_blacklist[i]);
 		}
 	}
+	
 	puts("");
 	fflush(stdout); //to see this message in systemctl status
 
@@ -216,40 +371,63 @@ int parse_arp(unsigned char *data) {
 	uint16_t type = ntohs(arp_IPv4->ns_arp_hdr.ns_arp_opcode);
 
 	if(type == NS_ARP_REQUEST) {
-		// if source matches to host
-		// and if target matches send magic
 		unsigned int eth_ip = *((unsigned int*)&m.eth_ip);
-
-		// sender and target address
 		unsigned int src_ip, ta_ip;
 		memcpy(&src_ip, arp_IPv4->ns_arp_sender_proto_addr, sizeof(unsigned int));
 		memcpy(&ta_ip, arp_IPv4->ns_arp_target_proto_addr, sizeof(unsigned int));
 
 		if((eth_ip&m.subnet) == (src_ip&m.subnet)) {
-			for(size_t i = 0; i < arr_count(m.target_list); i++) {
-				struct target *link = &m.target_list[i];
-
-				if(*(unsigned int*)link->ip != ta_ip)
-					continue;
-
-				int blacklist_found = -1;
-				arr_find(m.source_blacklist, src_ip, &blacklist_found);
-				if(blacklist_found > -1) {
-					#ifdef DEBUG
+			// Non-blocking DNS cache refresh (only if really needed)
+			refresh_dns_cache_if_needed_nonblocking(&m.exclude_dns_cache);
+			refresh_dns_cache_if_needed_nonblocking(&m.include_dns_cache);
+			
+			// Check blocklist (source_exclude) first
+			bool blocked = false;
+			for (size_t i = 0; i < m.exclude_dns_cache.count; ++i) {
+				if (m.exclude_dns_cache.entries[i].ip != 0 && m.exclude_dns_cache.entries[i].ip == src_ip) {
+					blocked = true;
+					break;
+				}
+			}
+			if (blocked) {
+				if (m.debug) {
 					printf("Blocked '");
 					print_ip(src_ip);
 					puts("' from the blacklist!");
-					#endif
-					break;
 				}
+				return 0;
+			}
 
+			// If allowlist is set, only allow if in allowlist
+			bool allowed = (m.include_dns_cache.count == 0);
+			if (!allowed) {
+				for (size_t i = 0; i < m.include_dns_cache.count; ++i) {
+					if (m.include_dns_cache.entries[i].ip != 0 && m.include_dns_cache.entries[i].ip == src_ip) {
+						allowed = true;
+						break;
+					}
+				}
+			}
+			if (!allowed) {
+				if (m.debug) {
+					printf("Source '");
+					print_ip(src_ip);
+					puts("' not in allowlist!");
+				}
+				return 0;
+			}
+
+			for(size_t i = 0; i < arr_count(m.target_list); i++) {
+				struct target *link = &m.target_list[i];
+				if(*(unsigned int*)link->ip != ta_ip)
+					continue;
 				RETONFAIL(send_magic_packet(link->magic));
 				printf("Magic packet to '");
 				print_ip(ta_ip);
 				printf("' sent by '");
 				print_ip(src_ip);
 				puts("'");
-				fflush(stdout); // Write now to get an accurate timestamp for analyzing wake-up reason
+				fflush(stdout);
 				break;
 			}
 		}
@@ -297,6 +475,8 @@ int read_args(int argc, char *argv[]) {
 			i++;
 		} else if(!strcmp(argv[i], "-ag")) {
 			m.allow_gateway_s = "true";
+		} else if(!strcmp(argv[i], "--debug")) {
+			m.debug = true;
 		}
 	}
 	return 0;
@@ -410,11 +590,16 @@ int load_config() {
 	FILE *fp = fopen(CONFIG_PREFIX"/wake-on-arp.conf", "r");
 	if(!fp) {
 		fprintf(stderr, "Could not open config file: "CONFIG_PREFIX"/wake-on-arp.conf\n");
-		return 1;
+		// Still initialize arrays to avoid segfaults
+		arr_init(m.source_blacklist);
+		arr_init(m.source_allowlist);
+		arr_init(m.target_list);
+		return 0; // Not an error, just skip config loading
 	}
 
 	// init variables
 	arr_init(m.source_blacklist);
+	arr_init(m.source_allowlist);
 	arr_init(m.target_list);
 
 	char *line = NULL;
@@ -447,22 +632,22 @@ int load_config() {
 			}
 			target_ip_add(m.target_list, number, val);
 		} else if(!strcmp("source_exclude", name)) {
-			uint8_t address[4];
-			// assuming IPv4
-
-			int err = sscanf(val, "%hhu.%hhu.%hhu.%hhu",
-				&address[0], &address[1], &address[2], &address[3]);
-
-			if(err != 4) {
-				fprintf(stderr, "Invalid IP address specified \"%s\", should be"
-						" in the following format: \"ab.cd.ef.gh\"\n", val);
-				return 2;
+			// Accept either IP or hostname
+			arr_add(m.source_blacklist, 0); // Placeholder, will resolve later
+			if (m.exclude_dns_cache.count < MAX_SOURCE_LIST_ENTRIES) {
+				m.exclude_dns_cache.entries[m.exclude_dns_cache.count].entry = strdup(val);
+				m.exclude_dns_cache.entries[m.exclude_dns_cache.count].is_hostname = (strchr(val, '.') == NULL || strspn(val, "0123456789.") != strlen(val));
+				m.exclude_dns_cache.count++;
 			}
-
-			// add 'em
-			uint32_t address_ptr = *((uint32_t*)&address);
-			arr_add(m.source_blacklist, address_ptr);
-
+			free(val);
+		} else if(!strcmp("source_include", name)) {
+			// Accept either IP or hostname
+			arr_add(m.source_allowlist, 0); // Placeholder, will resolve later
+			if (m.include_dns_cache.count < MAX_SOURCE_LIST_ENTRIES) {
+				m.include_dns_cache.entries[m.include_dns_cache.count].entry = strdup(val);
+				m.include_dns_cache.entries[m.include_dns_cache.count].is_hostname = (strchr(val, '.') == NULL || strspn(val, "0123456789.") != strlen(val));
+				m.include_dns_cache.count++;
+			}
 			free(val);
 		} else free(val); // not used
 
@@ -472,19 +657,54 @@ int load_config() {
 	}
 	if(line) free(line);
 
-	// weird seg. fault on ARMv7 (have to investigate)
-	//fclose(fp);
+	fclose(fp);
 	return 0;
 }
 
 int main(int argc, char *argv[]) {
+	DEBUG_PRINT("Starting wake-on-arp with debug mode\n");
+	
+	// Initialize all fields to zero/NULL for safety
+	memset(&m, 0, sizeof(m));
+	
+	DEBUG_PRINT("Initialized main struct\n");
+	
 	m.allow_gateway_s = NULL; // init config in case it won't be set
+	m.dns_cache_refresh_interval = DEFAULT_DNS_CACHE_REFRESH_INTERVAL;
+	m.exclude_dns_cache.count = 0;
+	m.include_dns_cache.count = 0;
+	m.exclude_dns_cache.last_refresh = 0;
+	m.include_dns_cache.last_refresh = 0;
+	
+	DEBUG_PRINT("Starting config load\n");
+	
 	// priority: load_config < read_args
 	load_config();
+	
+	DEBUG_PRINT("Config loaded, reading args\n");
+	
 	RETONFAIL(read_args(argc, argv));
+	
+	DEBUG_PRINT("Args read, parsing\n");
+	
 	RETONFAIL(parse_args());
+	
+	DEBUG_PRINT("Args parsed, refreshing DNS cache\n");
+	
+	// Initial DNS cache population
+	refresh_dns_cache_if_needed(&m.exclude_dns_cache);
+	refresh_dns_cache_if_needed(&m.include_dns_cache);
+	
+	DEBUG_PRINT("DNS cache refreshed, initializing\n");
+	
 	RETONFAIL(initialize());
+	
+	DEBUG_PRINT("Initialized, starting packet watch\n");
+	
 	RETONFAIL(watch_packets());
+	
+	DEBUG_PRINT("Cleaning up\n");
+	
 	cleanup();
 	return 0;
 }

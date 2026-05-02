@@ -43,11 +43,11 @@ int targets_configure(struct target *list) {
 
 		struct target *ta = &list[i];
 		if(ta->mac_s == NULL) {
-			fprintf(stderr, "Missing element 'target_mac_%lu'\n", i);
+			fprintf(stderr, "Missing element 'target_mac_%zu'\n", i);
 			return 1;
 		}
 		if(ta->ip_s == NULL) {
-			fprintf(stderr, "Missing element 'target_ip_%lu'\n", i);
+			fprintf(stderr, "Missing element 'target_ip_%zu'\n", i);
 			return 1;
 		}
 
@@ -60,7 +60,7 @@ int targets_configure(struct target *list) {
 				&ta->mac[0], &ta->mac[1], &ta->mac[2], &ta->mac[3], &ta->mac[4], &ta->mac[5]);
 		}
 		if(error != 6) {
-			fprintf(stderr, "Invalid 'ta_mac_%lu' address: \"%s\"\n", i, ta->mac_s);
+			fprintf(stderr, "Invalid 'ta_mac_%zu' address: \"%s\"\n", i, ta->mac_s);
 			return 2;
 		}
 
@@ -68,7 +68,7 @@ int targets_configure(struct target *list) {
 		error = sscanf(ta->ip_s, "%hhu.%hhu.%hhu.%hhu", &ta->ip[0],
 									&ta->ip[1], &ta->ip[2], &ta->ip[3]);
 		if(error != 4) {
-			fprintf(stderr, "Invalid 'ta_ip_%lu' address: \"%s\"\n", i, ta->ip_s);
+			fprintf(stderr, "Invalid 'ta_ip_%zu' address: \"%s\"\n", i, ta->ip_s);
 			return 2;
 		}
 

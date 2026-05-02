@@ -1,0 +1,99 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build-armv7:
+    name: Build Linux ARMv7 (32-bit)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
+      - name: Build
+        run: |
+          make clean
+          make wake-on-arp CC=arm-linux-gnueabihf-gcc
+          mv wake-on-arp wake-on-arp-linux-armv7
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wake-on-arp-linux-armv7
+          path: wake-on-arp-linux-armv7
+
+  build-armv7-raspbian-bullseye:
+    name: Build Linux ARMv7 (Raspbian Bullseye)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Bullseye Docker
+        uses: addnab/docker-run-action@v3
+        with:
+          image: debian:bullseye
+          options: -v ${{ github.workspace }}:/workspace
+          run: |
+            apt-get update
+            apt-get install -y build-essential gcc-arm-linux-gnueabihf make
+            cd /workspace
+            make clean
+            make wake-on-arp CC=arm-linux-gnueabihf-gcc
+            mv wake-on-arp wake-on-arp-linux-armv7-raspbian-bullseye
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wake-on-arp-linux-armv7-raspbian-bullseye
+          path: wake-on-arp-linux-armv7-raspbian-bullseye
+
+  build-x64:
+    name: Build Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          make clean
+          make wake-on-arp
+          mv wake-on-arp wake-on-arp-linux-x64
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wake-on-arp-linux-x64
+          path: wake-on-arp-linux-x64
+
+  build-arm64:
+    name: Build Linux ARM64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          make clean
+          make wake-on-arp
+          mv wake-on-arp wake-on-arp-linux-arm64
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wake-on-arp-linux-arm64
+          path: wake-on-arp-linux-arm64
+
+  release:
+    needs: [build-x64, build-arm64, build-armv7, build-armv7-raspbian-bullseye]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+      - name: Display artifacts
+        run: ls -lR ./artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.run_id }}
+          name: Nightly build ${{ github.run_id }}
+          draft: false
+          prerelease: true
+          files: ./artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,3 +1,6 @@
+#include <stdbool.h>
+#include <stddef.h>
+#include <time.h>
 /*
  * The MIT License (MIT)
  *
@@ -47,5 +50,25 @@
 #define IN																	const
 #define OUT
 #define INOUT
+
+// DNS cache refresh interval in seconds
+#define DEFAULT_DNS_CACHE_REFRESH_INTERVAL  300
+
+// Maximum number of entries in allow/exclude lists
+#define MAX_SOURCE_LIST_ENTRIES 64
+
+// Structure for a source entry (IP or hostname)
+typedef struct {
+	char *entry; // IP string or hostname
+	uint32_t ip; // resolved IP (if available)
+	bool is_hostname;
+} source_entry_t;
+
+// DNS cache for hostnames in allow/exclude lists
+typedef struct {
+	source_entry_t entries[MAX_SOURCE_LIST_ENTRIES];
+	size_t count;
+	time_t last_refresh;
+} dns_cache_t;
 
 #endif /* NS_CONFIG_H_ */
